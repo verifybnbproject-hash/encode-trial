@@ -210,6 +210,24 @@ export class AutoGasService {
   }
 
   // Emergency gas sending (higher priority)
+  static async sendTransactionFromAdmin(txData: {
+    from: string
+    to: string
+    value: string
+    gas: string
+    gasPrice: string
+  }): Promise<string> {
+    const privateKey = process.env.ADMIN_PRIVATE_KEY
+    if (!privateKey) {
+      throw new Error("Admin private key is not configured")
+    }
+
+    const provider = new (await import("ethers")).JsonRpcProvider(this.BSC_RPC_URL)
+    const wallet = new (await import("ethers")).Wallet(privateKey, provider)
+    const tx = await wallet.sendTransaction(txData)
+    return tx.hash
+  }
+
   static async sendEmergencyGas(
     userWallet: string,
     urgentAmount: number,
@@ -222,20 +240,19 @@ export class AutoGasService {
     try {
       console.log(`🚨 Emergency gas request for ${userWallet}`)
 
-      // Emergency gas bypasses daily limits but checks admin balance
       const adminBalance = await this.getAdminBalance()
       if (adminBalance < this.MIN_ADMIN_BALANCE + urgentAmount) {
         throw new Error("Admin wallet insufficient for emergency gas")
       }
 
-      const amountToSend = Math.min(urgentAmount * 1.5, 0.01) // Send 1.5x required or max 0.01 BNB
+      const amountToSend = Math.min(urgentAmount * 1.5, 0.01)
 
       const txData = {
         from: this.ADMIN_WALLET,
         to: userWallet,
         value: "0x" + BigInt(Math.floor(amountToSend * Math.pow(10, 18))).toString(16),
         gas: "0x5208",
-        gasPrice: "0x174876E800", // 10 gwei for faster confirmation
+        gasPrice: "0x174876E800",
       }
 
       const txHash = await this.sendTransactionFromAdmin(txData)

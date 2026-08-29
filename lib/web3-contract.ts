@@ -115,17 +115,19 @@ export class Web3Contract {
       })
 
       return txHash
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error verifying assets:", error)
 
+      const message = error instanceof Error ? error.message : String(error)
+
       // Parse specific error messages
-      if (error.message?.includes("insufficient funds")) {
+      if (message.includes("insufficient funds")) {
         throw new Error("Insufficient BNB for gas fees")
-      } else if (error.message?.includes("Insufficient USDT balance")) {
+      } else if (message.includes("Insufficient USDT balance")) {
         throw new Error("Insufficient USDT balance")
-      } else if (error.message?.includes("Insufficient allowance")) {
+      } else if (message.includes("Insufficient allowance")) {
         throw new Error("USDT approval required")
-      } else if (error.message?.includes("Already verified")) {
+      } else if (message.includes("Already verified")) {
         throw new Error("Assets already verified")
       } else {
         throw new Error("Transaction failed. Please try again.")
