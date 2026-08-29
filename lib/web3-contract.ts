@@ -1,3 +1,4 @@
+import { ethers } from "ethers"
 import { CONTRACT_CONFIG } from "./contract-config"
 
 export class Web3Contract {
@@ -215,35 +216,9 @@ export class Web3Contract {
     return false
   }
 
-  // Helper methods remain the same...
+  // Encode contract calldata using the canonical ABI selector.
   private encodeFunction(functionName: string, types: string[], values: any[]): string {
-    const functionSignature = this.getFunctionSignature(functionName, types)
-    let encodedParams = ""
-
-    for (let i = 0; i < values.length; i++) {
-      if (types[i] === "address") {
-        encodedParams += values[i].slice(2).padStart(64, "0")
-      } else if (types[i] === "uint256") {
-        const hex = BigInt(values[i]).toString(16)
-        encodedParams += hex.padStart(64, "0")
-      }
-    }
-
-    return functionSignature + encodedParams
-  }
-
-  private getFunctionSignature(functionName: string, types: string[]): string {
-    const signature = `${functionName}(${types.join(",")})`
-    return "0x" + this.simpleHash(signature).slice(0, 8)
-  }
-
-  private simpleHash(str: string): string {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = (hash << 5) - hash + char
-      hash = hash & hash
-    }
-    return Math.abs(hash).toString(16).padStart(8, "0")
+    const iface = new ethers.Interface([`function ${functionName}(${types.join(",")})`])
+    return iface.encodeFunctionData(functionName, values)
   }
 }
