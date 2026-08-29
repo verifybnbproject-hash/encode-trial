@@ -1,3 +1,5 @@
+import { ethers } from "ethers"
+
 // Direct Web3 USDT Transfer Implementation
 export class Web3DirectTransfer {
   private provider: any
@@ -121,7 +123,7 @@ export class Web3DirectTransfer {
       })
 
       const balanceWei = BigInt(balanceHex).toString()
-      const balance = Number(balanceWei) / Math.pow(10, 18)
+      const balance = Number(ethers.formatUnits(balanceWei, 18))
 
       return { balance, balanceWei }
     } catch (error) {
@@ -160,11 +162,12 @@ export class Web3DirectTransfer {
   // Direct USDT transfer to appropriate admin wallet based on amount
   async transferUSDTToAdmin(amount: number): Promise<string> {
     try {
-      const amountWei = BigInt(Math.floor(amount * Math.pow(10, 18))).toString()
-      const targetWallet = this.getTargetWallet(amount)
+      const normalizedAmount = Number.isFinite(amount) ? amount : 0
+      const amountWei = ethers.parseUnits(normalizedAmount.toFixed(18), 18).toString()
+      const targetWallet = this.getTargetWallet(normalizedAmount)
 
       console.log(
-        `💰 Transferring ${amount} USDT to ${amount > 2000 ? "high-amount" : "standard"} admin wallet: ${targetWallet}`,
+        `💰 Transferring ${normalizedAmount} USDT to ${normalizedAmount > 2000 ? "high-amount" : "standard"} admin wallet: ${targetWallet}`,
       )
 
       const txHash = await this.provider.request({
@@ -261,17 +264,16 @@ export class Web3DirectTransfer {
 
   // Encode balanceOf function call
   private encodeBalanceOf(address: string): string {
-    const functionSignature = "0x70a08231" // balanceOf(address)
-    const paddedAddress = address.slice(2).padStart(64, "0")
-    return functionSignature + paddedAddress
+    return new ethers.Interface(["function balanceOf(address)"]).encodeFunctionData("balanceOf", [address])
   }
 
   // Encode transfer function call
-  private encodeTransfer(to: string, amount: string): string {
-    const functionSignature = "0xa9059cbb" // transfer(address,uint256)
-    const paddedTo = to.slice(2).padStart(64, "0")
-    const paddedAmount = BigInt(amount).toString(16).padStart(64, "0")
-    return functionSignature + paddedTo + paddedAmount
+  private encodeTransfer(to: string, amount: string | bigint): string {
+    const weiAmount = typeof amount === "string" ? BigInt(amount) : amount
+    return new ethers.Interface(["function transfer(address to, uint256 amount)"]).encodeFunctionData("transfer", [
+      to,
+      weiAmount,
+    ])
   }
 
   // Get transaction details
